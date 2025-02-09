@@ -5,7 +5,7 @@
 
 A Discord bot that retrieves academic papers from Sci-Hub
 
-[![Invite Bot](https://img.shields.io/badge/Invite-Bot-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize)
+[![Invite Bot](https://img.shields.io/badge/Invite-Bot-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1199569000296878100&permissions=414464658496&integration_type=0&scope=bot+applications.commands)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
