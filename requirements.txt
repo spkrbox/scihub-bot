@@ -1,0 +1,8 @@
+discord.py
+rich
+python-dotenv
+aiohttp
+fake-useragent
+PyPDF2
+pdf2image
+upstash-redis
