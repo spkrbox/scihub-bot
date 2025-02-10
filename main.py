@@ -25,6 +25,8 @@ logger = logging.getLogger("sci.hub")
 class SciHubBot(commands.AutoShardedBot):
     """A Discord bot for retrieving papers from Sci-Hub."""
 
+    emojis = ["📚", "🔍", "📖", "🧠", "🎓", "⚡", "🔬", "📝"]
+
     def __init__(self):
         intents = discord.Intents.default()
 
@@ -34,9 +36,11 @@ class SciHubBot(commands.AutoShardedBot):
             description="A bot to fetch papers from Sci-Hub",
         )
         self.logger = logger
+        self.current_emoji = 0
 
     async def setup_hook(self) -> None:
         """Initialize the bot, load extensions."""
+        self.bg_task = self.loop.create_task(self.rotate_emoji())
         await self.load_extensions()
 
     async def load_extensions(self) -> None:
@@ -64,6 +68,18 @@ class SciHubBot(commands.AutoShardedBot):
         except Exception:
             self.logger.error("Failed to sync application commands", exc_info=True)
         self.logger.info("Bot is ready!")
+
+    async def rotate_emoji(self):
+        await self.wait_until_ready()
+        while not self.is_closed():
+            await self.change_presence(
+                activity=discord.Activity(
+                    type=discord.ActivityType.watching,
+                    name=f"/paper <doi> {self.emojis[self.current_emoji]}",
+                )
+            )
+            self.current_emoji = (self.current_emoji + 1) % len(self.emojis)
+            await asyncio.sleep(10)
 
 
 async def main():
