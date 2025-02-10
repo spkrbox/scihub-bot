@@ -13,7 +13,26 @@ logger = logging.getLogger("sci.hub.cog")
 class DownloadButton(discord.ui.Button):
     def __init__(self, url: str):
         super().__init__(
-            label="Download PDF", style=discord.ButtonStyle.link, url=url, emoji="📥"
+            label="Download",
+            style=discord.ButtonStyle.link,
+            url=url,
+            emoji="<:pdf:1338514643131564134>",
+        )
+
+
+class CitationButton(discord.ui.Button):
+    def __init__(self, citation: str):
+        super().__init__(
+            label="Citation",
+            style=discord.ButtonStyle.secondary,
+            emoji="<:quote:1338527790324256799>",
+            custom_id="citation",
+        )
+        self.citation = citation
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            f"```{self.citation}```", ephemeral=True
         )
 
 
@@ -32,6 +51,18 @@ class SciHub(commands.Cog):
         """Close scraper when cog is unloaded."""
         await self.scraper.close()
         logger.info("SciHub scraper closed")
+
+    async def _update_message(
+        self, message, content=None, embed=None, view=None, file=None
+    ):
+        """Helper method to update messages."""
+        kwargs = {
+            "content": content,
+            "embed": embed,
+            "view": view,
+            "attachments": [file] if file else [],
+        }
+        await message.edit(**kwargs)
 
     @app_commands.command(
         name="paper",
@@ -52,23 +83,31 @@ class SciHub(commands.Cog):
         )
 
         try:
-            pdf_url, domain, metadata, preview = await self.scraper.get_paper(doi)
+            (
+                pdf_url,
+                domain,
+                metadata,
+                preview,
+                citation,
+            ) = await self.scraper.get_paper(doi)
 
             if pdf_url:
                 logger.info(f"Successfully retrieved paper from {domain}")
                 embed = self._create_paper_embed(doi, domain, metadata)
                 view = discord.ui.View()
                 view.add_item(DownloadButton(pdf_url))
+                if citation:
+                    view.add_item(CitationButton(citation))
 
                 if preview:
                     file = discord.File(preview, filename="preview.png")
                     embed.set_thumbnail(url="attachment://preview.png")
-                    await initial_message.edit(
-                        content=None, embed=embed, view=view, attachments=[file]
+                    await self._update_message(
+                        initial_message, embed=embed, view=view, file=file
                     )
                 else:
-                    await initial_message.edit(
-                        content=None, embed=embed, view=view, attachments=[]
+                    await self._update_message(
+                        initial_message, embed=embed, view=view, file=None
                     )
             else:
                 logger.warning(f"Failed to retrieve paper for DOI: {doi}")
@@ -77,14 +116,15 @@ class SciHub(commands.Cog):
                     description="Failed to retrieve the paper from all available mirrors.",
                     color=discord.Color.red(),
                 )
-                await initial_message.edit(
-                    content=None, embed=error_embed, attachments=[]
+                await self._update_message(
+                    initial_message, embed=error_embed, file=None
                 )
         except Exception as e:
             logger.error(f"Error processing paper request: {str(e)}", exc_info=True)
-            await initial_message.edit(
+            await self._update_message(
+                initial_message,
                 content="An unexpected error occurred while processing your request.",
-                attachments=[],
+                file=None,
             )
 
     def _create_paper_embed(

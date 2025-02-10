@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html
 import io
 import json
 import logging
@@ -168,20 +169,13 @@ class SciHubScraper:
 
     def extract_pdf_url(self, html: str, base_url: str) -> Optional[str]:
         """Extract PDF URL from Sci-Hub HTML content."""
-        pdf_pattern = r'(?:src|href)=[\'"](?:/(?:downloads|tree|uptodate)/[^"\'>]+\.pdf|/[^"\'>]+\.pdf)'
+        pdf_pattern = r'(?:src|href)=[\'"]([^"\'>]+\.pdf)'
         if match := re.search(pdf_pattern, html):
-            pdf_path = match.group(0).split("=")[1].strip("\"'")
+            pdf_path = match.group(1)
 
-            if pdf_path.startswith("/downloads"):
-                return f"{base_url}{pdf_path}"
-            elif pdf_path.startswith("/tree"):
-                return f"{base_url}{pdf_path}"
-            elif pdf_path.startswith("/uptodate"):
-                return f"{base_url}{pdf_path}"
-            elif pdf_path.startswith("//"):
+            if pdf_path.startswith("//"):
                 return f"https:{pdf_path}"
-            else:
-                return f"{base_url}{pdf_path}"
+            return f"{base_url}{pdf_path}"
         return None
 
     async def get_pdf_preview(self, pdf_url: str) -> Optional[io.BytesIO]:
@@ -222,7 +216,7 @@ class SciHubScraper:
 
     async def get_cached_paper(
         self, doi: str
-    ) -> Optional[Tuple[str, str, Dict, io.BytesIO]]:
+    ) -> Optional[Tuple[str, str, Dict, io.BytesIO, str]]:
         """Get paper data from cache if available and caching is enabled."""
         if not self.use_cache or not self.redis:
             return None
@@ -238,7 +232,13 @@ class SciHubScraper:
                 preview_bytes = base64.b64decode(data["preview"])
                 preview = io.BytesIO(preview_bytes)
 
-            return (data["pdf_url"], data["domain"], data["metadata"], preview)
+            return (
+                data["pdf_url"],
+                data["domain"],
+                data["metadata"],
+                preview,
+                data.get("citation"),
+            )
         except Exception as e:
             logger.error(f"Error retrieving from cache: {str(e)}", exc_info=True)
             return None
@@ -250,6 +250,7 @@ class SciHubScraper:
         domain: str,
         metadata: Dict,
         preview: Optional[io.BytesIO],
+        citation: Optional[str],
     ) -> None:
         """Cache paper data in Redis if caching is enabled."""
         if not self.use_cache or not self.redis:
@@ -261,6 +262,7 @@ class SciHubScraper:
                 "domain": domain,
                 "metadata": metadata,
                 "preview": None,
+                "citation": citation,
             }
 
             if preview:
@@ -272,9 +274,25 @@ class SciHubScraper:
         except Exception as e:
             logger.error(f"Error caching paper data: {str(e)}", exc_info=True)
 
+    def extract_citation(self, html_content: str) -> Optional[str]:
+        """Extract citation from HTML content."""
+        citation_pattern = r'<div id\s*=\s*"citation"[^>]*>(.*?)</div>'
+        if match := re.search(citation_pattern, html_content, re.DOTALL):
+            citation = match.group(1).strip()
+            citation = re.sub(r"<[^>]+>", "", citation)
+            citation = html.unescape(citation)
+            return citation
+        return None
+
     async def get_paper(
         self, doi: str
-    ) -> Tuple[Optional[str], Optional[str], Optional[Dict], Optional[io.BytesIO]]:
+    ) -> Tuple[
+        Optional[str],
+        Optional[str],
+        Optional[Dict],
+        Optional[io.BytesIO],
+        Optional[str],
+    ]:
         """Attempt to retrieve paper from cache or Sci-Hub mirrors."""
         if not self.session:
             raise RuntimeError("Session not initialized. Call init() first.")
@@ -297,14 +315,19 @@ class SciHubScraper:
             status, html = result
             if status == 200:
                 if pdf_url := self.extract_pdf_url(html, domain):
+                    with open("html.txt", "w") as f:
+                        f.write(html)
                     logger.info(f"Successfully found PDF at {domain}")
                     preview = await self.get_pdf_preview(pdf_url)
+                    citation = self.extract_citation(html)
 
                     # cache the results
-                    await self.cache_paper(doi, pdf_url, domain, metadata, preview)
+                    await self.cache_paper(
+                        doi, pdf_url, domain, metadata, preview, citation
+                    )
 
-                    return pdf_url, domain, metadata, preview
+                    return pdf_url, domain, metadata, preview, citation
                 logger.warning(f"No PDF URL found in response from {domain}")
 
         logger.error(f"Failed to retrieve paper from all mirrors for DOI: {doi}")
-        return None, None, None, None
+        return None, None, None, None, None
